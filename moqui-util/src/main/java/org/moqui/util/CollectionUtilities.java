@@ -38,6 +38,20 @@ public class CollectionUtilities {
         public KeyValue(String key, Object value) { this.key = key; this.value = value; }
     }
 
+    public static ArrayList<Object> getMapArrayListValues(ArrayList<Map<Object, Object>> mapList, Object key, boolean excludeNullValues) {
+        if (mapList == null) return null;
+        int mapListSize = mapList.size();
+        ArrayList<Object> valList = new ArrayList<>(mapListSize);
+        for (int i = 0; i < mapListSize; i++) {
+            Map<Object, Object> curMap = mapList.get(i);
+            if (curMap == null) continue;
+            Object curVal = curMap.get(key);
+            if (excludeNullValues && curVal == null) continue;
+            valList.add(curVal);
+        }
+        return valList;
+    }
+
     public static void filterMapList(List<Map> theList, Map<String, Object> fieldValues) {
         filterMapList(theList, fieldValues, false);
     }
@@ -376,15 +390,39 @@ public class CollectionUtilities {
 
     /** Find all values of a named field in a nested Map containing fields, Maps, and Collections of Maps (Lists, etc) */
     public static void findAllFieldsNestedMap(String key, Map theMap, Set<Object> valueSet) {
-        Object localValue = theMap.get(key);
-        if (localValue != null) valueSet.add(localValue);
-        for (Object value : theMap.values()) {
-            if (value instanceof Map) {
-                findAllFieldsNestedMap(key, (Map) value, valueSet);
-            } else if (value instanceof Collection) {
-                // only look in Collections of Maps
-                for (Object colValue : (Collection) value) {
-                    if (colValue instanceof Map) findAllFieldsNestedMap(key, (Map) colValue, valueSet);
+        if (theMap instanceof LiteStringMap) {
+            LiteStringMap lsm = (LiteStringMap) theMap;
+            int keyLength = key != null ? key.length() : 0;
+            int keyHashCode = key != null ? key.hashCode() : 0;
+            boolean foundKey = false;
+            int lsmSize = lsm.size();
+            for (int i = 0; i < lsmSize; i++) {
+                String curKey = lsm.getKey(i);
+                Object curValue = lsm.getValue(i);
+                if (!foundKey && keyLength == curKey.length() && keyHashCode == curKey.hashCode() && curKey.equals(key)) {
+                    foundKey = true;
+                    if (curValue != null) valueSet.add(curValue);
+                }
+                if (curValue instanceof Map) {
+                    findAllFieldsNestedMap(key, (Map) curValue, valueSet);
+                } else if (curValue instanceof Collection) {
+                    // only look in Collections of Maps
+                    for (Object colValue : (Collection) curValue) {
+                        if (colValue instanceof Map) findAllFieldsNestedMap(key, (Map) colValue, valueSet);
+                    }
+                }
+            }
+        } else {
+            Object localValue = theMap.get(key);
+            if (localValue != null) valueSet.add(localValue);
+            for (Object value : theMap.values()) {
+                if (value instanceof Map) {
+                    findAllFieldsNestedMap(key, (Map) value, valueSet);
+                } else if (value instanceof Collection) {
+                    // only look in Collections of Maps
+                    for (Object colValue : (Collection) value) {
+                        if (colValue instanceof Map) findAllFieldsNestedMap(key, (Map) colValue, valueSet);
+                    }
                 }
             }
         }
@@ -540,6 +578,20 @@ public class CollectionUtilities {
         List theList = (List) context.get(listName);
         if (theList == null) theList = new ArrayList();
 
+        List pageList = paginateList(theList, pageListName, context);
+        context.put(pageListName, pageList);
+    }
+    public static List paginateList(List theList, String pageListName, Map<String, Object> context) {
+        Integer pageRangeLow = (Integer) context.get(pageListName + "PageRangeLow");
+        Integer pageRangeHigh = (Integer) context.get(pageListName + "PageRangeHigh");
+        if (pageRangeLow == null || pageRangeHigh == null) {
+            paginateParameters(theList != null ? theList.size() : 0, pageListName, context);
+            pageRangeLow = (Integer) context.get(pageListName + "PageRangeLow");
+            pageRangeHigh = (Integer) context.get(pageListName + "PageRangeHigh");
+        }
+        return theList.subList(pageRangeLow - 1, pageRangeHigh);
+    }
+    public static Map paginateParameters(int listSize, String pageListName, Map<String, Object> context) {
         final Object pageIndexObj = context.get("pageIndex");
         int pageIndex = 0;
         if (!ObjectUtilities.isEmpty(pageIndexObj)) {
@@ -556,8 +608,7 @@ public class CollectionUtilities {
         }
         if (pageSize < 0) pageSize = 20;
 
-        int count = theList.size();
-
+        int count = listSize;
         // calculate the pagination values
         int maxIndex = (new BigDecimal(count - 1)).divide(new BigDecimal(pageSize), 0, RoundingMode.DOWN).intValue();
         int pageRangeLow = (pageIndex * pageSize) + 1;
@@ -565,13 +616,13 @@ public class CollectionUtilities {
         int pageRangeHigh = (pageIndex * pageSize) + pageSize;
         if (pageRangeHigh > count) pageRangeHigh = count;
 
-        List pageList = theList.subList(pageRangeLow - 1, pageRangeHigh);
-        context.put(pageListName, pageList);
         context.put(pageListName + "Count", count);
         context.put(pageListName + "PageIndex", pageIndex);
         context.put(pageListName + "PageSize", pageSize);
         context.put(pageListName + "PageMaxIndex", maxIndex);
         context.put(pageListName + "PageRangeLow", pageRangeLow);
         context.put(pageListName + "PageRangeHigh", pageRangeHigh);
+
+        return context;
     }
 }
