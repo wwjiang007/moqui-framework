@@ -1,12 +1,12 @@
 /*
  * This software is in the public domain under CC0 1.0 Universal plus a
  * Grant of Patent License.
- * 
+ *
  * To the extent possible under law, the author(s) have dedicated all
  * copyright and related and neighboring rights to this software to the
  * public domain worldwide. This software is distributed without any
  * warranty.
- * 
+ *
  * You should have received a copy of the CC0 Public Domain Dedication
  * along with this software (see the LICENSE.md file). If not, see
  * <http://creativecommons.org/publicdomain/zero/1.0/>.
@@ -2144,6 +2144,16 @@ class ScreenRenderImpl implements ScreenRender {
         EntityFacadeImpl entityFacade = sfi.ecfi.entityFacade
         // see if there is a user setting for the theme
         String themeId = entityFacade.fastFindOne("moqui.security.UserScreenTheme", true, true, ec.userFacade.userId, stteId)?.screenThemeId
+        // if no user theme see if group a user is in has a theme
+        if (themeId == null || themeId.length() == 0) {
+            // use reverse alpha so ALL_USERS goes last...
+            List<String> userGroupIdSet = new ArrayList(new TreeSet(ec.user.getUserGroupIdSet())).reverse(true)
+            EntityList groupThemeList = entityFacade.find("moqui.security.UserGroupScreenTheme")
+                    .condition("userGroupId", "in", userGroupIdSet).condition("screenThemeTypeEnumId", stteId)
+                    .orderBy("sequenceNum,-userGroupId").useCache(true).disableAuthz().list()
+            if (groupThemeList.size() > 0) themeId = groupThemeList.first().screenThemeId
+        }
+
         // use the Enumeration.enumCode from the type to find the theme type's default screenThemeId
         if (themeId == null || themeId.length() == 0) {
             EntityValue themeTypeEnum = entityFacade.fastFindOne("moqui.basic.Enumeration", true, true, stteId)
